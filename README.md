@@ -52,8 +52,8 @@ Examples
   width: 100%;
 }
 .rtl .example  {
-    padding-right: unset;
     border-radius: 2px 0 8px 0;
+    padding-right: unset;
     padding-left: 20px;
     text-align: right;
     transform: translate(50%, 50%);
@@ -63,13 +63,13 @@ Examples
 Basic usage
 ---
 
-#### Using postcss
+#### Using postcss JavaScript API
 
 ```bash
 const postcss = require('postcss');
 const cssJanus = require('postcss-janus');
 
-postcss( [ rtl(options) ] );
+postcss( [ cssJanus(options) ] );
 ```
 
 #### Using postcss-loader in Webpack
@@ -105,10 +105,10 @@ Options
 Directives
 ---
 
-Directives should be added as comments before a CSS selector block or a property, e.g:
+Directives should be added as comments before a CSS rule block or a property, e.g:
 
 ```css
-/* @selectorDirective */
+/* @ruleDirective */
 .example {
     /* @propertyDirective */
     color: white;
@@ -117,7 +117,7 @@ Directives should be added as comments before a CSS selector block or a property
 
 | Directive           | Description                                                                                                  |
 | ------------------- | ------------------------------------------------------------------------------------------------------------ |
-| @noflip             | Avoid flipping certain CSS property or an entire selector block                                              |
+| @noflip             | Avoid flipping certain CSS property or an entire rule block                                              |
 | @swapLtrRtlInUrl    | Swap `ltr` and `rtl` strings in a certain property (it will ignore the global `swapLtrRtlInUrl` option       |
 | @swapLeftRightInUrl | Swap `left` and `right` strings in a certain property (it will ignore the global `swapLeftRightInUrl` option |
 
