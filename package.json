@@ -1,6 +1,6 @@
 {
   "name": "postcss-janus",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "PostCSS plugin plugin to create RTL rules using CSSJanus",
   "keywords": [
     "postcss",

@@ -1,82 +1,105 @@
 const postcss = require('postcss');
 const cssjanus = require('cssjanus');
 
-const regLeftRight = /(left|right)/;
-
 const commentRules = {
   noflip: '@noflip',
   swapLtrRtlInUrl: '@swapLtrRtlInUrl',
   swapLeftRightInUrl: '@swapLeftRightInUrl'
 };
 
-const checkCommentRule = (node, comment) => {
+const regLeftRight = /(left|right)/;
+const regJanusComments = new RegExp(`(${Object.values(commentRules).join('|')})`);
+
+const checkPreviousComment = (node, comment) => {
   const prev = node ? node.prev() : null;
-  return prev && prev.type === 'comment' && (new RegExp(comment)).test(prev.toString());
+  return prev && prev.type === 'comment' && prev.toString().includes(comment) && prev.remove();
+};
+
+const getDeclarationsObject = (rule) => {
+  const obj = {};
+  rule.walkDecls(decl => obj[decl.prop] = { value: decl.value, important: decl.important} );
+  return obj;
+};
+
+const cleanCssJanusComments = (rule) => {
+  rule.walkComments(comment => {
+    if (regJanusComments.test(comment.toString())) {
+      comment.remove();
+    }
+  });
 };
 
 module.exports = postcss.plugin('postcss-janus', (options = {}) => async (css) => {
 
-  const prefixes = options.prefixes || '.rtl';
-  const swapLtrRtlInUrl = options.swapLtrRtlInUrl || false;
-  const swapLeftRightInUrl = options.swapLeftRightInUrl || false;
+  const { prefixes = '.rtl', swapLtrRtlInUrl = false, swapLeftRightInUrl = false } = options;
+  
+  await css.walkRules(async rule => {
+    
+    if ( !checkPreviousComment(rule, commentRules.noflip) ) {
+      
+      const ruleStr = rule.toString();
+      const ruleStrRtl = await cssjanus.transform(ruleStr, swapLtrRtlInUrl, swapLeftRightInUrl);
+      const noRtlChanges = ruleStr === ruleStrRtl;
+      const hasLtrRtlUrlDirectives = ruleStr.includes(commentRules.swapLtrRtlInUrl);
+      const hasLeftRightUrlDirectives = ruleStr.includes(commentRules.swapLeftRightInUrl);
 
-  await css.walkRules(async (rule) => {
+      if ( !noRtlChanges || hasLtrRtlUrlDirectives || hasLeftRightUrlDirectives ) {
+        const root = postcss.parse(ruleStrRtl);
+        const ruleRtl = root.first;
 
-    if ( !checkCommentRule(rule, commentRules.noflip) ) {
+        const declLtrObject = getDeclarationsObject(rule);
 
-      const declarations = [];
-      const ltr = [];
+        await ruleRtl.walkDecls((decl) => {
+          if (declLtrObject[decl.prop] && declLtrObject[decl.prop].value === decl.value) {
+            if (hasLtrRtlUrlDirectives || hasLeftRightUrlDirectives) {
+              let urlInverted = '';
+              if (checkPreviousComment(decl, commentRules.swapLtrRtlInUrl)) {
+                urlInverted = cssjanus.transform(decl.value, true);
+              } else if (checkPreviousComment(decl, commentRules.swapLeftRightInUrl)) {
+                urlInverted = cssjanus.transform(decl.value, false, true);
+              }
+              if (urlInverted) {
+                if (urlInverted === decl.value) {
+                  decl.remove();
+                } else {
+                  decl.value = urlInverted;
+                }
+              } else {
+                decl.remove();
+              }
+            } else {
+              decl.remove();
+            }            
+          }
+        });
 
-      await rule.walkDecls(declaration => {
+        const declRtlObject = getDeclarationsObject(ruleRtl);
+        let ruleRtlDeclQuantity = 0;
 
-        if ( !checkCommentRule(declaration, commentRules.noflip) ) {
-
-          const css = `${declaration.toString()};`;
-
-          declarations.push(css);
-
-          ltr.push({
-            css,
-            prop: declaration.prop,
-            swapLtrRtlInUrl: (!swapLtrRtlInUrl && checkCommentRule(declaration, commentRules.swapLtrRtlInUrl)) || swapLtrRtlInUrl,
-            swapLeftRightInUrl: (!swapLeftRightInUrl && checkCommentRule(declaration, commentRules.swapLeftRightInUrl)) || swapLeftRightInUrl,
-            reset: regLeftRight.test(declaration.prop)
-          });
-
-        }
-
-      });
-
-      const rtl = ltr.map(obj => ({...obj, css: cssjanus.transform(obj.css, obj.swapLtrRtlInUrl, obj.swapLeftRightInUrl)}));
-      const filtered = rtl.filter(obj => declarations.indexOf(obj.css) < 0);
-      const rtlProps = filtered.map(obj => obj.prop);
-
-      if (filtered.length) {
-
-        const selector = rule.selector
-            .split(',')
-            .map(s => {
-              const st = s.trim();
-              return typeof prefixes === 'string'
-                  ? `\n${ prefixes } ${ st }`
-                  : prefixes.map(p => `\n${p} ${st}`)
-            }).join(',');
-
-        const reset = filtered.reduce((css, obj) => {
-          if (obj.reset) {
-            if ( rtlProps.indexOf(cssjanus.transform(obj.prop)) < 0 ) {
-              css += `\n    ${ obj.prop }: unset;`;
+        ruleRtl.walkDecls((decl) => {
+          ruleRtlDeclQuantity++;
+          if (regLeftRight.test(decl.prop)) {
+            const inverse = cssjanus.transform(decl.prop);
+            if (!declRtlObject[inverse]) {
+              const unsetDecl = postcss.decl({prop: inverse, value: 'unset', important: declRtlObject[decl.prop].important});
+              decl.before(unsetDecl);
             }
           }
-          return css;
-        }, '');
+        });
 
-        const rtlCSS = filtered.reduce((css, obj) => {
-          css += `    ${ obj.css }\n`;
-          return css;
-        }, '');
+        cleanCssJanusComments(rule);
+        cleanCssJanusComments(ruleRtl);
 
-        await rule.after(`${ selector } {${reset}\n${rtlCSS}}`);
+        if (ruleRtlDeclQuantity) {          
+          ruleRtl.selectors = typeof prefixes === 'string'
+            ? ruleRtl.selectors.map((s, i) => `${i && '' || '\n'}${prefixes} ${s}`)
+            : ruleRtl.selectors.reduce((ps, s) => {
+              ps = ps.concat(prefixes.map((p, i) => `${i && '' || '\n'}${p} ${s}`));
+              return ps;
+            }, []);
+
+          rule.after(ruleRtl);
+        }        
 
       }
 
