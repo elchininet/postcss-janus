@@ -11,7 +11,7 @@ Install
 #### npm
 
 ```bash
-nmp install postcss-janus --save-dev
+npm install postcss-janus --save-dev
 ```
 
 #### yarn
