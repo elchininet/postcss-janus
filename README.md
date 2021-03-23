@@ -5,6 +5,8 @@
 [PostCSS]: https://github.com/postcss/postcss
 [CSSJanus]: https://github.com/cssjanus/cssjanus
 
+>This project is not longer maintained. If you want to create `ltr` and `rtl` rules at the same time, use [postcss-rtlcss](https://github.com/elchininet/postcss-rtlcss) instead.
+
 Install
 ---
 
